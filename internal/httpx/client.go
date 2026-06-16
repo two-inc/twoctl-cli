@@ -183,16 +183,24 @@ func shouldRetry(resp *http.Response, err error) bool {
 	return false
 }
 
-// backoffDelay honours `Retry-After` when set, otherwise applies exponential
-// backoff with jitter so a thundering herd doesn't synchronise.
+// backoffDelay applies exponential backoff with jitter so a thundering herd
+// doesn't synchronise, and treats `Retry-After` as a lower bound rather than an
+// override: the server hint is honoured only when it exceeds our own backoff,
+// and is clamped to maxBackoff. This keeps `Retry-After: 0` (e.g. a fleet-wide
+// rate-limit reset) from collapsing into a zero-delay retry storm, and stops a
+// hostile or misconfigured `Retry-After: 999999` from parking the CLI for days.
+// Mirrors twoadm-cli internal/httpx (see INF-1314).
 func backoffDelay(attempt int, resp *http.Response) time.Duration {
-	if resp != nil {
-		if v := resp.Header.Get("Retry-After"); v != "" {
-			if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && secs >= 0 {
-				return time.Duration(secs) * time.Second
-			}
-		}
+	d := jitteredBackoff(attempt)
+	if hint := retryAfter(resp); hint > d {
+		d = hint
 	}
+	return d
+}
+
+// jitteredBackoff returns the exponential backoff for `attempt` (0-based) with
+// [0, 25%) additive jitter, capped at maxBackoff.
+func jitteredBackoff(attempt int) time.Duration {
 	// Clamp attempt so the shift below can't overflow time.Duration on
 	// pathological MaxRetries values. baseBackoff << 6 = 16s, already
 	// past the cap, so any attempt ≥ 6 lands on maxBackoff anyway.
@@ -208,4 +216,26 @@ func backoffDelay(attempt int, resp *http.Response) time.Duration {
 		jitter = 1
 	}
 	return d + time.Duration(rand.Int64N(jitter))
+}
+
+// retryAfter parses the `Retry-After` header (seconds form), clamped to
+// maxBackoff. Returns 0 when the header is absent, negative, or unparseable so
+// the caller falls back to jittered exponential backoff.
+func retryAfter(resp *http.Response) time.Duration {
+	if resp == nil {
+		return 0
+	}
+	v := strings.TrimSpace(resp.Header.Get("Retry-After"))
+	if v == "" {
+		return 0
+	}
+	secs, err := strconv.Atoi(v)
+	if err != nil || secs < 0 {
+		return 0
+	}
+	d := time.Duration(secs) * time.Second
+	if d > maxBackoff {
+		return maxBackoff
+	}
+	return d
 }
