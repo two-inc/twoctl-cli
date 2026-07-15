@@ -33,8 +33,8 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	github.com/woodsbury/decimal128 v1.4.0 // indirect
-	golang.org/x/crypto v0.46.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
