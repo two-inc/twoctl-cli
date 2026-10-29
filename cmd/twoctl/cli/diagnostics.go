@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -111,7 +112,7 @@ func diagnosticBody(raw []byte) any {
 	decoder.UseNumber()
 	var value any
 	if err := decoder.Decode(&value); err != nil {
-		return secretValueRe.ReplaceAllString(string(raw), "[REDACTED]")
+		return redactDiagnosticString(string(raw))
 	}
 	return redactDiagnosticValue(value)
 }
@@ -131,7 +132,42 @@ func redactDiagnosticValue(value any) any {
 			value[i] = redactDiagnosticValue(child)
 		}
 	case string:
-		return secretValueRe.ReplaceAllString(value, "[REDACTED]")
+		return redactDiagnosticString(value)
 	}
 	return value
+}
+
+// redactDiagnosticString handles URL-valued body fields as well as API keys.
+// Malformed URLs fail closed rather than returning possibly credential-bearing
+// text. Only the diagnostic copy is changed.
+func redactDiagnosticString(value string) string {
+	if !strings.Contains(value, "://") && !strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "?") {
+		return secretValueRe.ReplaceAllString(value, "[REDACTED]")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "[REDACTED]"
+	}
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return "[REDACTED]"
+	}
+	for key, values := range query {
+		if sensitiveHeaderRe.MatchString(key) {
+			query.Set(key, "[REDACTED]")
+			continue
+		}
+		for i, child := range values {
+			values[i] = secretValueRe.ReplaceAllString(child, "[REDACTED]")
+		}
+	}
+	parsed.RawQuery = query.Encode()
+	if parsed.User != nil {
+		parsed.User = url.User("[REDACTED]")
+	}
+	if parsed.Fragment != "" {
+		parsed.Fragment = "[REDACTED]"
+		parsed.RawFragment = ""
+	}
+	return secretValueRe.ReplaceAllString(parsed.String(), "[REDACTED]")
 }

@@ -33,7 +33,7 @@ func checkDiagnosticVerbosity(t *testing.T, level int) {
 		sent = string(raw)
 		w.Header().Set("X-Request-Id", "request-123")
 		w.Header().Set("Set-Cookie", "session=response-private")
-		fmt.Fprint(w, `{"token":"response-private","id":9007199254740993}`)
+		fmt.Fprint(w, `{"token":"response-private","payment_link":"https://checkout.two.inc/payment/initiation?token=abc123","id":9007199254740993}`)
 	}))
 	defer srv.Close()
 	args := []string{"--url", srv.URL, "--api-key", "api-private", "order", "create", "--data", payload}
@@ -75,7 +75,7 @@ func checkDiagnosticVerbosity(t *testing.T, level int) {
 
 func assertNoDiagnosticSecrets(t *testing.T, stderr string) {
 	t.Helper()
-	for _, secret := range []string{"api-private", "request-private", "response-private", "secret_test_abcdefghijklmnop"} {
+	for _, secret := range []string{"api-private", "request-private", "response-private", "abc123", "secret_test_abcdefghijklmnop"} {
 		if strings.Contains(stderr, secret) {
 			t.Errorf("detailed diagnostics exposed %q", secret)
 		}
@@ -206,5 +206,41 @@ func TestDiagnosticsRedactKeyShapedValuesUnderOrdinaryNames(t *testing.T) {
 	}
 	if req.URL.Query().Get("note") != key || req.Header.Get("X-Custom") != key {
 		t.Fatal("redaction modified the actual request")
+	}
+}
+
+func TestDiagnosticBodyRedactsURLCredentials(t *testing.T) {
+	for _, value := range []string{
+		"https://checkout.two.inc/payment/initiation?token=abc123&keep=yes",
+		"https://example.test/?ToKeN=abc123&token=second-secret",
+		"https://example.test/?%74oken=abc123",
+		"/payment/initiation?token=abc123",
+		"?token=abc123",
+		"https://user:abc123@example.test/path",
+		"https://example.test/#token=abc123",
+		"https://example.test/?token=abc123&bad=%zz",
+		"https://example.test/%zz?token=abc123",
+	} {
+		t.Run(value, func(t *testing.T) {
+			raw, _ := json.Marshal(map[string]any{"payment_link": value, "nested": []any{value}})
+			redacted, err := json.Marshal(diagnosticBody(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, secret := range []string{"abc123", "second-secret"} {
+				if strings.Contains(string(redacted), secret) {
+					t.Fatalf("URL credential leaked: %s", redacted)
+				}
+			}
+			if strings.Contains(value, "keep=yes") && !strings.Contains(string(redacted), "keep=yes") {
+				t.Fatal("redaction removed non-sensitive query data")
+			}
+			if got := diagnosticBody([]byte(value)); strings.Contains(fmt.Sprint(got), "abc123") {
+				t.Fatalf("plain URL credential leaked: %v", got)
+			}
+		})
+	}
+	if got := redactDiagnosticString("ordinary text"); got != "ordinary text" {
+		t.Fatalf("ordinary text changed: %q", got)
 	}
 }
