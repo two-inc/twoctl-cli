@@ -34,7 +34,7 @@ func validatePayload(w io.Writer, op *openapi3.Operation, raw []byte) error {
 		return nil
 	}
 	schema := permissiveSchema(mt.Schema.Value, map[*openapi3.Schema]*openapi3.Schema{})
-	if err := schema.VisitJSON(value, openapi3.VisitAsRequest()); err != nil {
+	if err := validatePermissiveSchema(mt.Schema.Value, schema, value); err != nil {
 		// Do not render SchemaError.Error(): it includes the submitted payload.
 		var schemaErr *openapi3.SchemaError
 		if errors.As(err, &schemaErr) {
@@ -177,4 +177,79 @@ func readValidatedRequestBody(w io.Writer, op *openapi3.Operation, b *opBindings
 	}
 	headers.Set("Content-Type", "application/json")
 	return bytes.NewReader(raw), nil
+}
+
+func validatePermissiveSchema(original, relaxed *openapi3.Schema, value any) error {
+	// Relaxing closed oneOf branches can make them overlap. Keep an original
+	// match, or retry without fields unknown to every branch, before treating
+	// that newly introduced ambiguity as a genuine schema violation.
+	err := relaxed.VisitJSON(value, openapi3.VisitAsRequest())
+	if !errors.Is(err, openapi3.ErrOneOfConflict) {
+		return err
+	}
+	if original.VisitJSON(value, openapi3.VisitAsRequest()) == nil {
+		return nil
+	}
+	return original.VisitJSON(pruneUnknownPayload(original, value), openapi3.VisitAsRequest())
+}
+
+func allPayloadSchemas(s *openapi3.Schema, seen map[*openapi3.Schema]bool) []*openapi3.Schema {
+	if s == nil || seen[s] {
+		return nil
+	}
+	seen[s] = true
+	out := []*openapi3.Schema{s}
+	refs := append(append(append(openapi3.SchemaRefs{}, s.AllOf...), s.AnyOf...), s.OneOf...)
+	for _, ref := range refs {
+		if ref != nil {
+			out = append(out, allPayloadSchemas(ref.Value, seen)...)
+		}
+	}
+	return out
+}
+
+func pruneUnknownPayload(s *openapi3.Schema, value any) any {
+	schemas := allPayloadSchemas(s, map[*openapi3.Schema]bool{})
+	switch v := value.(type) {
+	case map[string]any:
+		return pruneUnknownObject(schemas, v)
+	case []any:
+		out := append([]any(nil), v...)
+		for _, schema := range schemas {
+			if schema.Items != nil && schema.Items.Value != nil {
+				for i, item := range out {
+					out[i] = pruneUnknownPayload(schema.Items.Value, item)
+				}
+			}
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+func pruneUnknownObject(schemas []*openapi3.Schema, value map[string]any) map[string]any {
+	props := openapi3.Schemas{}
+	open, declared := false, false
+	for _, schema := range schemas {
+		open = open || schema.AdditionalProperties.Schema != nil ||
+			(schema.AdditionalProperties.Has != nil && *schema.AdditionalProperties.Has)
+		declared = declared || len(schema.Properties) > 0 ||
+			(schema.AdditionalProperties.Has != nil && !*schema.AdditionalProperties.Has)
+		for key, ref := range schema.Properties {
+			if props[key] == nil {
+				props[key] = &openapi3.SchemaRef{Value: &openapi3.Schema{}}
+			}
+			props[key].Value.AllOf = append(props[key].Value.AllOf, ref)
+		}
+	}
+	out := map[string]any{}
+	for key, item := range value {
+		if ref := props[key]; ref != nil && ref.Value != nil {
+			out[key] = pruneUnknownPayload(ref.Value, item)
+		} else if open || !declared {
+			out[key] = item
+		}
+	}
+	return out
 }

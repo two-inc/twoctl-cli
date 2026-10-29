@@ -216,3 +216,24 @@ func TestPayloadDryRunValidation(t *testing.T) {
 		t.Fatal("invalid dry-run body accepted")
 	}
 }
+
+func TestPayloadClosedOneOf(t *testing.T) {
+	op := payloadTestOperation(t, `{"oneOf":[{"type":"object","additionalProperties":false,"properties":{"a":{"type":"string"}}},{"type":"object","additionalProperties":false,"properties":{"b":{"type":"string"}}}]}`)
+	for _, body := range []string{`{"a":"x"}`, `{"a":"x","extra":1}`} {
+		if err := validatePayload(io.Discard, op, []byte(body)); err != nil {
+			t.Fatalf("valid branch rejected for %s: %v", body, err)
+		}
+	}
+	for _, body := range []string{`{}`, `{"a":1}`, `{"a":"x","b":"x"}`} {
+		if err := validatePayload(io.Discard, op, []byte(body)); err == nil {
+			t.Fatalf("invalid oneOf accepted for %s", body)
+		}
+	}
+}
+
+func TestPayloadOneOfWithUnrelatedUnknown(t *testing.T) {
+	op := payloadTestOperation(t, `{"type":"object","properties":{"company":{"oneOf":[{"type":"object","additionalProperties":false,"properties":{"a":{"type":"string"}}},{"type":"object","additionalProperties":false,"properties":{"b":{"type":"string"}}}]},"other":{"type":"object","additionalProperties":false,"properties":{"x":{"type":"string"}}}}}`)
+	if err := validatePayload(io.Discard, op, []byte(`{"company":{"a":"x"},"other":{"extra":1}}`)); err != nil {
+		t.Fatal(err)
+	}
+}
