@@ -362,7 +362,25 @@ func runOperation(c *cobra.Command, method, path string, op *openapi3.Operation,
 	if dryRun {
 		return printDryRun(c, req, body != nil)
 	}
-	return executeRequest(c, httpx.New(resolved.APIKey), req)
+	client, err := operationClient(resolved.APIKey)
+	if err != nil {
+		return err
+	}
+	return executeRequest(c, client, req)
+}
+
+// operationClient applies the same retry policy to ordinary and paginated calls.
+func operationClient(apiKey string) (*http.Client, error) {
+	if flagMaxRetries < 0 {
+		return nil, &apiError{
+			code:    "invalid_max_retries",
+			message: "--max-retries must be zero or greater",
+			exit:    ExitUsage,
+		}
+	}
+	return httpx.NewWithOptions(httpx.Options{
+		APIKey: apiKey, MaxRetries: flagMaxRetries, DisableRetries: flagMaxRetries == 0,
+	}), nil
 }
 
 func resolveForRun(dryRun bool) (*config.Resolved, error) {
