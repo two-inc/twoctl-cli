@@ -118,25 +118,8 @@ func TestPayloadValidationBeforeHTTP(t *testing.T) {
 				defer srv.Close()
 				flagURL, flagAPIKey = srv.URL, "secret_test_mock"
 				cmd := buildOperationCommand("test", "/test", "POST", payloadTestOperation(t, payloadTestSchema))
-				args := []string{"--data", body}
-				if source != "data" {
-					file := filepath.Join(t.TempDir(), "payload.json")
-					if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
-						t.Fatal(err)
-					}
-					args = []string{"--file", file}
-					if source == "stdin" {
-						f, err := os.Open(file)
-						if err != nil {
-							t.Fatal(err)
-						}
-						defer f.Close()
-						old := os.Stdin
-						os.Stdin = f
-						defer func() { os.Stdin = old }()
-						args = []string{"--file", "-"}
-					}
-				}
+				args := payloadSourceArgs(t, source, body)
+				cmd.SilenceUsage, cmd.SilenceErrors = true
 				var stdout, stderr bytes.Buffer
 				cmd.SetOut(&stdout)
 				cmd.SetErr(&stderr)
@@ -187,4 +170,29 @@ func TestPermissiveSchemaCycle(t *testing.T) {
 	if err := validatePayload(io.Discard, &openapi3.Operation{}, []byte(`{}`)); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func payloadSourceArgs(t *testing.T, source, body string) []string {
+	t.Helper()
+	if source == "data" {
+		return []string{"--data", body}
+	}
+	file := filepath.Join(t.TempDir(), "payload.json")
+	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if source == "file" {
+		return []string{"--file", file}
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdin
+	os.Stdin = f
+	t.Cleanup(func() {
+		os.Stdin = old
+		f.Close()
+	})
+	return []string{"--file", "-"}
 }
