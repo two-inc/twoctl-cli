@@ -77,6 +77,10 @@ func runPaginated(c *cobra.Command, method, path string, op *openapi3.Operation,
 		}
 	}
 
+	if shouldPromptPagination(c, b) && !flagBool(c, "all", "twoctl-all") {
+		return runInteractivePages(c, client, resolved.BaseURL, method, path, op, b, bodyBytes, cursorPtr)
+	}
+
 	combined, err = fetchAllPages(c, client, resolved.BaseURL, method, path, op, b, bodyBytes, cursorPtr)
 	if err != nil {
 		return err
@@ -105,8 +109,16 @@ func runPaginated(c *cobra.Command, method, path string, op *openapi3.Operation,
 // and max-page guards. Extracted from runPaginated so the cyclomatic
 // complexity of the caller stays under the lint threshold.
 func fetchAllPages(c *cobra.Command, client *http.Client, baseURL, method, path string, op *openapi3.Operation, b *opBindings, bodyBytes []byte, cursorPtr *string) ([]any, error) {
+	return fetchPages(c, client, baseURL, method, path, op, b, bodyBytes, cursorPtr, nil)
+}
+
+// fetchPages shares request construction and safety guards between --all and
+// interactive browsing. A visitor streams each page; nil collects all items.
+func fetchPages(c *cobra.Command, client *http.Client, baseURL, method, path string, op *openapi3.Operation, b *opBindings, bodyBytes []byte, cursorPtr *string, visit func([]byte, string) (bool, error)) ([]any, error) {
+	originalCursor := *cursorPtr
+	defer func() { *cursorPtr = originalCursor }()
 	var combined []any
-	seen := map[string]struct{}{}
+	seen := map[string]struct{}{originalCursor: {}}
 	for page := 0; page < maxPaginatedPages; page++ {
 		req, err := buildPageRequest(c, baseURL, method, path, op, b, bodyBytes)
 		if err != nil {
@@ -117,7 +129,11 @@ func fetchAllPages(c *cobra.Command, client *http.Client, baseURL, method, path 
 			return nil, err
 		}
 		items, next := splitPage(raw)
-		combined = append(combined, items...)
+		if visit == nil {
+			combined = append(combined, items...)
+		} else if more, err := visit(raw, next); err != nil || !more {
+			return nil, err
+		}
 		if next == "" {
 			return combined, nil
 		}
@@ -195,3 +211,4 @@ func splitPage(raw []byte) ([]any, string) {
 	}
 	return items, next
 }
+

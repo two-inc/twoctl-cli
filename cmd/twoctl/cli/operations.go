@@ -215,6 +215,8 @@ func buildOperationCommand(name, path, method string, op *openapi3.Operation) *c
 	if hasPaginationParam(op) {
 		registerBoolUnlessTaken(cmd, "all", "twoctl-all",
 			"follow next_page_cursor and emit every page concatenated")
+		registerBoolUnlessTaken(cmd, "no-paginate", "twoctl-no-paginate",
+			"fetch only one page without prompting")
 	}
 
 	cmd.RunE = func(c *cobra.Command, args []string) error {
@@ -227,7 +229,10 @@ func buildOperationCommand(name, path, method string, op *openapi3.Operation) *c
 		if describe {
 			return printDescribe(c, method, path, op)
 		}
-		if all && !dryRun {
+		if all && flagBool(c, "no-paginate", "twoctl-no-paginate") {
+			return &apiError{code: "conflicting_pagination_flags", message: "--all and --no-paginate cannot be combined", exit: ExitUsage}
+		}
+		if !dryRun && (all || (hasPaginationParam(op) && shouldPromptPagination(c, bindings))) {
 			return runPaginated(c, method, path, op, bindings)
 		}
 		return runOperation(c, method, path, op, bindings, dryRun)
@@ -794,3 +799,4 @@ func buildOpLong(method, path string, op *openapi3.Operation) string {
 	}
 	return b.String()
 }
+
