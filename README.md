@@ -122,6 +122,22 @@ API key resolution order (highest precedence first):
 
 Keys are obtained from the [Two merchant portal](https://portal.two.inc).
 
+### Configuration directory
+
+Set `TWOCTL_CONFIG_HOME` to use a dedicated twoctl configuration directory:
+
+```sh
+TWOCTL_CONFIG_HOME=/path/to/job-config twoctl config get-contexts
+```
+
+Directory precedence is `TWOCTL_CONFIG_HOME`, then
+`$XDG_CONFIG_HOME/twoctl`, then `~/.config/twoctl`. An empty override falls
+back to the next location. Both `config.yaml` (and its lock) and updater
+`state.json` use the selected directory; `TWOCTL_CONFIG_HOME` names that
+directory directly, with no extra `twoctl/` appended. Existing files are
+not copied between locations. API keys stay in the OS keychain, keyed by
+context name, so selecting a different directory does not isolate keys.
+
 ## Usage
 
 The command tree is resource-first: `twoctl <resource> <action> [flags]`.
