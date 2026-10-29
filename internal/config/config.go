@@ -126,7 +126,11 @@ func resolveKey(flagKey, ctxName string) (string, string, error) {
 		return v, "$" + envVar, nil
 	}
 	if ctxName != "" {
-		if k, err := keyring.Get(keyringService, keyringAccount(ctxName)); err == nil && k != "" {
+		k, err := keyring.Get(keyringService, keyringAccount(ctxName))
+		if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			return "", "", fmt.Errorf("reading keychain for context %q: %w", ctxName, wrapKeyringErr(err))
+		}
+		if err == nil && k != "" {
 			return k, fmt.Sprintf("keychain (context %s)", ctxName), nil
 		}
 	}
@@ -410,7 +414,7 @@ func DeleteKey(ctxName string) error {
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}
-	return err
+	return wrapKeyringErr(err)
 }
 
 // HasStoredKey reports whether the keychain currently holds a key for the

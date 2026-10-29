@@ -122,6 +122,13 @@ API key resolution order (highest precedence first):
 
 Keys are obtained from the [Two merchant portal](https://portal.two.inc).
 
+If a keychain lookup fails, twoctl reports the underlying error rather than
+claiming no key is stored. On headless Linux without a running Secret
+Service/DBus session, the error explains the required backend and suggests
+`TWO_API_KEY` for headless use. Explicit `--api-key` and `TWO_API_KEY` values
+bypass the keychain. A missing key still prompts you to run `twoctl auth login`;
+keychain failures never fall back to storing keys in a file.
+
 ### Configuration directory
 
 Set `TWOCTL_CONFIG_HOME` to use a dedicated twoctl configuration directory:
