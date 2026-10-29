@@ -110,6 +110,19 @@ twoctl --context cyber checkout get-order --order-id abc   # kubectl-style alias
 twoctl --url http://localhost:8080 --api-key secret_test_x ...
 ```
 
+Scripts can select a context without changing the saved selection:
+
+```sh
+TWOCTL_CONTEXT=staging twoctl order get --order-id abc
+```
+
+Context selection follows `--context`, then `--env`, then non-empty
+`TWOCTL_CONTEXT`, then the saved current context. `--url` overrides the
+API URL and requires `--api-key` or `TWO_API_KEY` rather than using a stored
+context key. API calls, `auth whoami`, `auth login`, `auth logout`, and
+`--dry-run` honor the invocation context. `config current-context` continues
+to show the saved selection; the environment override never writes it.
+
 For built-in env names (`prod`, `sandbox`, `staging`, `cyber`, `perf`,
 `release`) twoctl knows the URL. For any other name it falls back to
 `https://api.<name>.two.inc`; override with `--url`.
