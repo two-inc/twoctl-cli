@@ -200,6 +200,21 @@ Top-level non-resource commands:
 | 6 | server error (5xx) |
 | 7 | network / transport failure |
 
+## HTTP diagnostics
+
+Use `-v` (or `--verbose`) to write one JSON diagnostic per API request to
+stderr, including method, URL, HTTP status, elapsed milliseconds, and the
+upstream request ID when present. This includes successful calls and every
+page fetched by `--all`; the duration includes retries and reading the body.
+Transport and body-read failures include an error field.
+
+Use `-vv` to include request/response headers and bodies. Sensitive header,
+query, and JSON field values are redacted. Body diagnostics use the existing
+4 MiB cap; an unavailable or oversized request body is reported without
+interrupting the API request. Treat detailed output as API data when sharing
+it. Stdout remains the operation response, and successful calls produce no
+HTTP diagnostics by default.
+
 ## Self-upgrade
 
 `twoctl` checks for new releases at most once every 24 hours and prompts when one is available. The prompt offers:

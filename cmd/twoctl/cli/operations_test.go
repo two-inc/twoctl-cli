@@ -34,6 +34,7 @@ func resetGlobals(t *testing.T) {
 	flagContext = ""
 	flagURL = ""
 	flagOutput = "json"
+	flagVerbose = 0
 	resetCobraFlags(Root())
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)

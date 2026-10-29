@@ -521,13 +521,16 @@ func readCappedBody(r io.Reader) ([]byte, error) {
 }
 
 func executeRequest(c *cobra.Command, client *http.Client, req *http.Request) error {
+	trace := beginRequestDiagnostics(c, req)
 	resp, err := client.Do(req)
 	if err != nil {
+		trace(nil, nil, err)
 		return &apiError{code: "network", message: err.Error(), exit: ExitNetwork}
 	}
 	defer resp.Body.Close()
 
 	respBody, err := readCappedBody(resp.Body)
+	trace(resp, respBody, err)
 	if err != nil {
 		return err
 	}
@@ -604,7 +607,6 @@ func readBody(file, data string) ([]byte, error) {
 
 func printResponse(cmd *cobra.Command, status int, body []byte) error {
 	if len(body) == 0 {
-		fmt.Fprintf(cmd.ErrOrStderr(), "HTTP %d (no body)\n", status)
 		return nil
 	}
 	format, err := resolveOutputFormat(cmd)
