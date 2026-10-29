@@ -22,7 +22,7 @@ func payloadTestOperation(t *testing.T, schema string) *openapi3.Operation {
 	return doc.Paths.Value("/test").Post
 }
 
-const payloadTestSchema = `{"type":"object","required":["amount","currency"],"additionalProperties":false,"properties":{"amount":{"type":"integer","minimum":1},"currency":{"type":"string","enum":["GBP"]},"lines":{"type":"array","items":{"type":"object","required":["name"],"additionalProperties":false,"properties":{"name":{"type":"string"}}}}}`
+const payloadTestSchema = `{"type":"object","required":["amount","currency"],"additionalProperties":false,"properties":{"amount":{"type":"integer","minimum":1},"currency":{"type":"string","enum":["GBP"]},"lines":{"type":"array","items":{"type":"object","required":["name"],"additionalProperties":false,"properties":{"name":{"type":"string"}}}}}}`
 
 func TestPayloadValidation(t *testing.T) {
 	op := payloadTestOperation(t, payloadTestSchema)
@@ -33,7 +33,7 @@ func TestPayloadValidation(t *testing.T) {
 		{"valid", `{"amount":1,"currency":"GBP"}`, "", false},
 		{"unknown", `{"amount":1,"currency":"GBP","extra":"secret"}`, "/extra", false},
 		{"nested unknown", `{"amount":1,"currency":"GBP","lines":[{"name":"ok","extra":"secret"}]}`, "/lines/0/extra", false},
-		{"missing", `{"ammount":1,"currency":"GBP"}`, "", true},
+		{"missing", `{"amount_typo":1,"currency":"GBP"}`, "", true},
 		{"enum", `{"amount":1,"currency":"secret"}`, "", true},
 		{"type", `{"amount":"secret","currency":"GBP"}`, "", true},
 		{"minimum", `{"amount":0,"currency":"GBP"}`, "", true},
