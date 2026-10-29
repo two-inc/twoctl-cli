@@ -13,8 +13,8 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
-// validatePayload checks a private schema copy: embedded schemas are shared by
-// all commands and must retain their original describe output.
+// validatePayload checks a private payload projection. Shared embedded schemas
+// and the original bytes sent to the API are never modified.
 func validatePayload(w io.Writer, op *openapi3.Operation, raw []byte) error {
 	if len(raw) == 0 {
 		if op.RequestBody != nil && op.RequestBody.Value != nil && op.RequestBody.Value.Required {
@@ -33,8 +33,8 @@ func validatePayload(w io.Writer, op *openapi3.Operation, raw []byte) error {
 	if mt == nil || mt.Schema == nil || mt.Schema.Value == nil {
 		return nil
 	}
-	schema := permissiveSchema(mt.Schema.Value, map[*openapi3.Schema]*openapi3.Schema{})
-	if err := validatePermissiveSchema(mt.Schema.Value, schema, value); err != nil {
+	schema := mt.Schema.Value
+	if err := schema.VisitJSON(pruneUnknownPayload(schema, value), openapi3.VisitAsRequest()); err != nil {
 		// Do not render SchemaError.Error(): it includes the submitted payload.
 		var schemaErr *openapi3.SchemaError
 		if errors.As(err, &schemaErr) {
@@ -60,68 +60,8 @@ func payloadError(message string) error {
 	return &apiError{code: "invalid_request_body", message: message, exit: ExitUsage}
 }
 
-func permissiveSchema(s *openapi3.Schema, seen map[*openapi3.Schema]*openapi3.Schema) *openapi3.Schema {
-	if s == nil {
-		return nil
-	}
-	if copy := seen[s]; copy != nil {
-		return copy
-	}
-	copy := *s
-	seen[s] = &copy
-	clone := func(ref *openapi3.SchemaRef) *openapi3.SchemaRef {
-		if ref == nil {
-			return nil
-		}
-		r := *ref
-		r.Value = permissiveSchema(ref.Value, seen)
-		return &r
-	}
-	copy.Properties = openapi3.Schemas{}
-	for key, ref := range s.Properties {
-		copy.Properties[key] = clone(ref)
-	}
-	copy.Items = clone(s.Items)
-	copy.AdditionalProperties.Schema = clone(s.AdditionalProperties.Schema)
-	if s.AdditionalProperties.Has != nil && !*s.AdditionalProperties.Has {
-		// nil allows additional fields, while preserving explicitly open maps.
-		copy.AdditionalProperties.Has = nil
-	}
-	copy.AllOf = cloneSchemaRefs(s.AllOf, clone)
-	copy.AnyOf = cloneSchemaRefs(s.AnyOf, clone)
-	copy.OneOf = cloneSchemaRefs(s.OneOf, clone)
-	// Negation is a constraint, not an object receiving extra properties.
-	// Retain it unchanged so relaxing a forbidden shape cannot reject more input.
-	return &copy
-}
-
-func cloneSchemaRefs(refs openapi3.SchemaRefs, clone func(*openapi3.SchemaRef) *openapi3.SchemaRef) openapi3.SchemaRefs {
-	out := make(openapi3.SchemaRefs, len(refs))
-	for i, ref := range refs {
-		out[i] = clone(ref)
-	}
-	return out
-}
-
-// payloadSchemas combines applicable branches before checking property names.
-// A property declared by one allOf branch is not unknown to its siblings.
-func payloadSchemas(s *openapi3.Schema, value any, seen map[*openapi3.Schema]bool) []*openapi3.Schema {
-	if s == nil || seen[s] {
-		return nil
-	}
-	seen[s] = true
-	out := []*openapi3.Schema{s}
-	refs := append(append(append(openapi3.SchemaRefs{}, s.AllOf...), s.AnyOf...), s.OneOf...)
-	for _, ref := range refs {
-		if ref != nil && ref.Value != nil && ref.Value.VisitJSON(value, openapi3.VisitAsRequest()) == nil {
-			out = append(out, payloadSchemas(ref.Value, value, seen)...)
-		}
-	}
-	return out
-}
-
 func unknownPayloadFields(s *openapi3.Schema, value any, path string, warnings map[string]bool) {
-	schemas := payloadSchemas(s, value, map[*openapi3.Schema]bool{})
+	schemas := allPayloadSchemas(s, map[*openapi3.Schema]bool{})
 	switch v := value.(type) {
 	case map[string]any:
 		unknownObjectFields(schemas, v, path, warnings)
@@ -138,24 +78,14 @@ func unknownPayloadFields(s *openapi3.Schema, value any, path string, warnings m
 }
 
 func unknownObjectFields(schemas []*openapi3.Schema, value map[string]any, path string, warnings map[string]bool) {
+	shape := payloadObjectShape(schemas)
 	for key, item := range value {
-		known, declared, open := false, false, false
 		childPath := path + "/" + strings.ReplaceAll(strings.ReplaceAll(key, "~", "~0"), "/", "~1")
-		for _, schema := range schemas {
-			declared = declared || len(schema.Properties) > 0
-			if ref := schema.Properties[key]; ref != nil && ref.Value != nil {
-				known = true
-				unknownPayloadFields(ref.Value, item, childPath, warnings)
-			}
-			if ref := schema.AdditionalProperties.Schema; ref != nil && ref.Value != nil {
-				open = true
-				if schema.Properties[key] == nil {
-					unknownPayloadFields(ref.Value, item, childPath, warnings)
-				}
-			}
-			open = open || (schema.AdditionalProperties.Has != nil && *schema.AdditionalProperties.Has)
-		}
-		if declared && !known && !open {
+		if ref := shape.props[key]; ref != nil {
+			unknownPayloadFields(ref.Value, item, childPath, warnings)
+		} else if shape.open {
+			unknownPayloadFields(shape.extra, item, childPath, warnings)
+		} else if shape.declared {
 			warnings[childPath] = true
 		}
 	}
@@ -179,20 +109,6 @@ func readValidatedRequestBody(w io.Writer, op *openapi3.Operation, b *opBindings
 	return bytes.NewReader(raw), nil
 }
 
-func validatePermissiveSchema(original, relaxed *openapi3.Schema, value any) error {
-	// Relaxing closed oneOf branches can make them overlap. Keep an original
-	// match, or retry without fields unknown to every branch, before treating
-	// that newly introduced ambiguity as a genuine schema violation.
-	err := relaxed.VisitJSON(value, openapi3.VisitAsRequest())
-	if !errors.Is(err, openapi3.ErrOneOfConflict) {
-		return err
-	}
-	if original.VisitJSON(value, openapi3.VisitAsRequest()) == nil {
-		return nil
-	}
-	return original.VisitJSON(pruneUnknownPayload(original, value), openapi3.VisitAsRequest())
-}
-
 func allPayloadSchemas(s *openapi3.Schema, seen map[*openapi3.Schema]bool) []*openapi3.Schema {
 	if s == nil || seen[s] {
 		return nil
@@ -214,13 +130,15 @@ func pruneUnknownPayload(s *openapi3.Schema, value any) any {
 	case map[string]any:
 		return pruneUnknownObject(schemas, v)
 	case []any:
-		out := append([]any(nil), v...)
+		items := &openapi3.Schema{}
 		for _, schema := range schemas {
-			if schema.Items != nil && schema.Items.Value != nil {
-				for i, item := range out {
-					out[i] = pruneUnknownPayload(schema.Items.Value, item)
-				}
+			if schema.Items != nil {
+				items.AllOf = append(items.AllOf, schema.Items)
 			}
+		}
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = pruneUnknownPayload(items, item)
 		}
 		return out
 	default:
@@ -228,27 +146,40 @@ func pruneUnknownPayload(s *openapi3.Schema, value any) any {
 	}
 }
 
-func pruneUnknownObject(schemas []*openapi3.Schema, value map[string]any) map[string]any {
-	props := openapi3.Schemas{}
-	open, declared := false, false
+type payloadShape struct {
+	props          openapi3.Schemas
+	extra          *openapi3.Schema
+	open, declared bool
+}
+
+func payloadObjectShape(schemas []*openapi3.Schema) payloadShape {
+	shape := payloadShape{props: openapi3.Schemas{}, extra: &openapi3.Schema{}}
 	for _, schema := range schemas {
-		open = open || schema.AdditionalProperties.Schema != nil ||
+		if schema.AdditionalProperties.Schema != nil {
+			shape.extra.AllOf = append(shape.extra.AllOf, schema.AdditionalProperties.Schema)
+		}
+		shape.open = shape.open || schema.AdditionalProperties.Schema != nil ||
 			(schema.AdditionalProperties.Has != nil && *schema.AdditionalProperties.Has)
-		declared = declared || len(schema.Properties) > 0 ||
+		shape.declared = shape.declared || len(schema.Properties) > 0 ||
 			(schema.AdditionalProperties.Has != nil && !*schema.AdditionalProperties.Has)
 		for key, ref := range schema.Properties {
-			if props[key] == nil {
-				props[key] = &openapi3.SchemaRef{Value: &openapi3.Schema{}}
+			if shape.props[key] == nil {
+				shape.props[key] = &openapi3.SchemaRef{Value: &openapi3.Schema{}}
 			}
-			props[key].Value.AllOf = append(props[key].Value.AllOf, ref)
+			shape.props[key].Value.AllOf = append(shape.props[key].Value.AllOf, ref)
 		}
 	}
+	return shape
+}
+
+func pruneUnknownObject(schemas []*openapi3.Schema, value map[string]any) map[string]any {
+	shape := payloadObjectShape(schemas)
 	out := map[string]any{}
 	for key, item := range value {
-		if ref := props[key]; ref != nil && ref.Value != nil {
+		if ref := shape.props[key]; ref != nil {
 			out[key] = pruneUnknownPayload(ref.Value, item)
-		} else if open || !declared {
-			out[key] = item
+		} else if shape.open || !shape.declared {
+			out[key] = pruneUnknownPayload(shape.extra, item)
 		}
 	}
 	return out

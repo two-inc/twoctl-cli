@@ -157,12 +157,16 @@ func TestPayloadValidationPagination(t *testing.T) {
 	}
 }
 
-func TestPermissiveSchemaCycle(t *testing.T) {
+func TestPayloadProjectionCycle(t *testing.T) {
 	s := openapi3.NewObjectSchema()
 	s.Properties = openapi3.Schemas{"child": {Value: s}}
-	copy := permissiveSchema(s, map[*openapi3.Schema]*openapi3.Schema{})
-	if copy == s || copy.Properties["child"].Value != copy {
-		t.Fatal("schema cycle was not preserved in private copy")
+	original := map[string]any{"child": map[string]any{"extra": "kept"}}
+	projected := pruneUnknownPayload(s, original).(map[string]any)
+	if len(projected["child"].(map[string]any)) != 0 {
+		t.Fatal("nested unknown field was not removed from validation projection")
+	}
+	if original["child"].(map[string]any)["extra"] != "kept" {
+		t.Fatal("original payload changed")
 	}
 	if err := validatePayload(io.Discard, &openapi3.Operation{}, nil); err != nil {
 		t.Fatal(err)
@@ -235,5 +239,23 @@ func TestPayloadOneOfWithUnrelatedUnknown(t *testing.T) {
 	op := payloadTestOperation(t, `{"type":"object","properties":{"company":{"oneOf":[{"type":"object","additionalProperties":false,"properties":{"a":{"type":"string"}}},{"type":"object","additionalProperties":false,"properties":{"b":{"type":"string"}}}]},"other":{"type":"object","additionalProperties":false,"properties":{"x":{"type":"string"}}}}}`)
 	if err := validatePayload(io.Discard, op, []byte(`{"company":{"a":"x"},"other":{"extra":1}}`)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPayloadArrayComposition(t *testing.T) {
+	op := payloadTestOperation(t, `{"allOf":[{"type":"array","items":{"type":"object","properties":{"a":{"type":"string"}}}},{"type":"array","items":{"type":"object","properties":{"b":{"type":"string"}},"required":["b"]}}]}`)
+	if err := validatePayload(io.Discard, op, []byte(`[{"a":"x","b":"y"}]`)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPayloadTypedMapNestedUnknown(t *testing.T) {
+	op := payloadTestOperation(t, `{"type":"object","additionalProperties":{"type":"object","additionalProperties":false,"required":["a"],"properties":{"a":{"type":"string"}}}}`)
+	var warnings bytes.Buffer
+	if err := validatePayload(&warnings, op, []byte(`{"entry":{"a":"x","extra":1}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(warnings.String(), "/entry/extra") {
+		t.Fatal("missing typed-map child warning")
 	}
 }
