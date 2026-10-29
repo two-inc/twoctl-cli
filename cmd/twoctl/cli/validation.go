@@ -66,13 +66,9 @@ func unknownPayloadFields(s *openapi3.Schema, value any, path string, warnings m
 	case map[string]any:
 		unknownObjectFields(schemas, v, path, warnings)
 	case []any:
-		for _, schema := range schemas {
-			if schema.Items == nil || schema.Items.Value == nil {
-				continue
-			}
-			for i, item := range v {
-				unknownPayloadFields(schema.Items.Value, item, fmt.Sprintf("%s/%d", path, i), warnings)
-			}
+		items := payloadItemSchema(schemas)
+		for i, item := range v {
+			unknownPayloadFields(items, item, fmt.Sprintf("%s/%d", path, i), warnings)
 		}
 	}
 }
@@ -130,12 +126,7 @@ func pruneUnknownPayload(s *openapi3.Schema, value any) any {
 	case map[string]any:
 		return pruneUnknownObject(schemas, v)
 	case []any:
-		items := &openapi3.Schema{}
-		for _, schema := range schemas {
-			if schema.Items != nil {
-				items.AllOf = append(items.AllOf, schema.Items)
-			}
-		}
+		items := payloadItemSchema(schemas)
 		out := make([]any, len(v))
 		for i, item := range v {
 			out[i] = pruneUnknownPayload(items, item)
@@ -183,4 +174,14 @@ func pruneUnknownObject(schemas []*openapi3.Schema, value map[string]any) map[st
 		}
 	}
 	return out
+}
+
+func payloadItemSchema(schemas []*openapi3.Schema) *openapi3.Schema {
+	items := &openapi3.Schema{}
+	for _, schema := range schemas {
+		if schema.Items != nil {
+			items.AllOf = append(items.AllOf, schema.Items)
+		}
+	}
+	return items
 }

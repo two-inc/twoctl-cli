@@ -244,8 +244,12 @@ func TestPayloadOneOfWithUnrelatedUnknown(t *testing.T) {
 
 func TestPayloadArrayComposition(t *testing.T) {
 	op := payloadTestOperation(t, `{"allOf":[{"type":"array","items":{"type":"object","properties":{"a":{"type":"string"}}}},{"type":"array","items":{"type":"object","properties":{"b":{"type":"string"}},"required":["b"]}}]}`)
-	if err := validatePayload(io.Discard, op, []byte(`[{"a":"x","b":"y"}]`)); err != nil {
+	var warnings bytes.Buffer
+	if err := validatePayload(&warnings, op, []byte(`[{"a":"x","b":"y"}]`)); err != nil {
 		t.Fatal(err)
+	}
+	if warnings.Len() != 0 {
+		t.Fatalf("known composition properties warned: %s", warnings.String())
 	}
 }
 
