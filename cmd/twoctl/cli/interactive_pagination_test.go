@@ -177,9 +177,8 @@ func TestInteractivePaginationLoopAndCursorRestore(t *testing.T) {
 }
 
 func TestNextPageCancellation(t *testing.T) {
-	in, writer := io.Pipe()
-	defer in.Close()
-	defer writer.Close()
+	in := &paginationBlockedReader{entered: make(chan struct{}), release: make(chan struct{})}
+	defer close(in.release)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -187,6 +186,11 @@ func TestNextPageCancellation(t *testing.T) {
 		_, err := askNextPage(ctx, bufio.NewReader(in), io.Discard)
 		done <- err
 	}()
+	select {
+	case <-in.entered:
+	case <-time.After(time.Second):
+		t.Fatal("prompt never entered input read")
+	}
 	cancel()
 	select {
 	case err := <-done:
@@ -196,4 +200,15 @@ func TestNextPageCancellation(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("prompt ignored cancellation")
 	}
+}
+
+type paginationBlockedReader struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (r *paginationBlockedReader) Read([]byte) (int, error) {
+	close(r.entered)
+	<-r.release
+	return 0, io.EOF
 }

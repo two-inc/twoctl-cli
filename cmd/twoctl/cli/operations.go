@@ -799,4 +799,3 @@ func buildOpLong(method, path string, op *openapi3.Operation) string {
 	}
 	return b.String()
 }
-
