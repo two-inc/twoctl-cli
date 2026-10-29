@@ -2,6 +2,9 @@ package config
 
 import (
 	"errors"
+	"fmt"
+	"net"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -81,5 +84,46 @@ func TestMissingKeyStillReportsNoAPIKey(t *testing.T) {
 	}
 	if err := DeleteKey("sandbox"); err != nil {
 		t.Fatalf("deleting an absent key should remain a no-op: %v", err)
+	}
+}
+
+func TestKeychainOperationsExplainDBusConnectionFailures(t *testing.T) {
+	failures := []error{
+		&exec.Error{Name: "dbus-launch", Err: exec.ErrNotFound},
+		&net.OpError{Op: "dial", Net: "unix", Err: errors.New("connect: no such file or directory")},
+		&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")},
+	}
+	for _, failure := range failures {
+		t.Run(failure.Error(), func(t *testing.T) {
+			t.Setenv("TWO_API_KEY", "")
+			keyring.MockInitWithError(fmt.Errorf("backend: %w", failure))
+			t.Cleanup(keyring.MockInit)
+			for name, operation := range map[string]func() error{
+				"read":   func() error { _, _, err := resolveKey("", "sandbox"); return err },
+				"write":  func() error { return StoreKey("sandbox", "test-key") },
+				"delete": func() error { return DeleteKey("sandbox") },
+			} {
+				t.Run(name, func(t *testing.T) {
+					err := operation()
+					if !errors.Is(err, failure) {
+						t.Fatalf("lost backend cause: %v", err)
+					}
+					if !strings.Contains(err.Error(), "libsecret") || !strings.Contains(err.Error(), "TWO_API_KEY") {
+						t.Fatalf("missing backend guidance: %v", err)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestUnrelatedKeyringErrorsRemainUnchanged(t *testing.T) {
+	for _, failure := range []error{
+		errors.New("User interaction is not allowed"),
+		&net.OpError{Op: "read", Net: "unix", Err: errors.New("permission denied")},
+	} {
+		if got := wrapKeyringErr(failure); got != failure {
+			t.Fatalf("unrelated error was reclassified: %v", got)
+		}
 	}
 }
