@@ -19,6 +19,8 @@ jobs:
           go-version: '1.26'
           cache: true
       - run: go build ./...
+      - name: Check embedded spec drift
+        run: make check-generated
       - run: make test-cover
 
   lint:

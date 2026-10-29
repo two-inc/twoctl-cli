@@ -1,4 +1,4 @@
-.PHONY: build install regen test test-cover lint tidy clean release-dry help
+.PHONY: build install regen check-generated test test-cover lint tidy clean release-dry help
 
 BINARY  := twoctl
 PKG     := github.com/two-inc/twoctl-cli
@@ -16,6 +16,9 @@ install: ## Install twoctl into $$GOBIN (or $$GOPATH/bin).
 
 regen: ## Refresh embedded OpenAPI specs from openapi/<api>-api.yaml.
 	./scripts/codegen.sh
+
+check-generated: ## Regenerate embedded specs and fail if committed output is stale.
+	./scripts/check-generated.sh
 
 test: ## Run all unit tests.
 	go test ./...
