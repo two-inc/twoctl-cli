@@ -181,11 +181,13 @@ func keyringAccount(ctxName string) string { return "ctx:" + ctxName }
 
 // --- file I/O ---
 
-// configDir returns the twoctl config directory. We prefer XDG-style
-// `$XDG_CONFIG_HOME/twoctl` or `~/.config/twoctl` over the macOS default
-// (`~/Library/Application Support/twoctl`) so the location is predictable
-// across platforms and matches where users expect dotfile-style config.
+// configDir returns TWOCTL_CONFIG_HOME when set, otherwise the XDG-style
+// $XDG_CONFIG_HOME/twoctl or ~/.config/twoctl directory. The override names
+// the twoctl directory itself, not its parent.
 func configDir() (string, error) {
+	if dir := os.Getenv("TWOCTL_CONFIG_HOME"); dir != "" {
+		return dir, nil
+	}
 	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
 		return filepath.Join(x, "twoctl"), nil
 	}

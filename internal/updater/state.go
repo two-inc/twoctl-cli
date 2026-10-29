@@ -65,9 +65,12 @@ func (s *State) AutoCheckEnabled() bool {
 	return *s.AutoCheck
 }
 
-// statePath uses the same XDG-flavoured directory as the rest of twoctl
-// (~/.config/twoctl or $XDG_CONFIG_HOME/twoctl).
+// statePath uses the same directory precedence as context configuration:
+// TWOCTL_CONFIG_HOME, $XDG_CONFIG_HOME/twoctl, then ~/.config/twoctl.
 func statePath() (string, error) {
+	if dir := os.Getenv("TWOCTL_CONFIG_HOME"); dir != "" {
+		return filepath.Join(dir, "state.json"), nil
+	}
 	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
 		return filepath.Join(x, "twoctl", "state.json"), nil
 	}
