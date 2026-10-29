@@ -1,7 +1,7 @@
 package cli
 
 // Cursor-style pagination. Operations that expose a `page_cursor` query
-// parameter and return a body with `next_page_cursor` get an extra `--all`
+// parameter and return `cursor_page_metadata.next_page_cursor` get an extra `--all`
 // flag that follows the cursor until exhaustion, concatenating each page's
 // `items` array into a single JSON output.
 //
@@ -142,11 +142,11 @@ func fetchPages(c *cobra.Command, client *http.Client, baseURL, method, path str
 		}
 		seen[next] = struct{}{}
 		if len(items) == 0 {
-			return nil, fmt.Errorf("server returned empty items with a non-empty next_page_cursor; aborting --all")
+			return nil, fmt.Errorf("server returned empty items with a non-empty next_page_cursor; aborting pagination")
 		}
 		*cursorPtr = next
 	}
-	return nil, fmt.Errorf("--all hit %d-page safety cap; narrow the query or paginate manually", maxPaginatedPages)
+	return nil, fmt.Errorf("pagination hit %d-page safety cap; narrow the query or paginate manually", maxPaginatedPages)
 }
 
 func buildPageRequest(c *cobra.Command, baseURL, method, path string, op *openapi3.Operation, b *opBindings, bodyBytes []byte) (*http.Request, error) {
@@ -195,19 +195,30 @@ func fetchPage(client *http.Client, req *http.Request) ([]byte, error) {
 // either field is treated as absent.
 func splitPage(raw []byte) ([]any, string) {
 	var page map[string]any
-	if err := json.Unmarshal(raw, &page); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&page); err != nil {
 		return nil, ""
 	}
 	var items []any
-	switch v := page[itemsResponseName].(type) {
+	values := page[itemsResponseName]
+	if values == nil {
+		// BillingStatementsResponse uses statements; other cursor responses
+		// in the vendored specs use items.
+		values = page["statements"]
+	}
+	switch v := values.(type) {
 	case []any:
 		items = v
 	case nil:
 		// null or missing - leave items empty.
 	}
-	var next string
-	if c, ok := page[cursorResponseName].(string); ok {
-		next = c
+	// The API specs nest cursor metadata. Keep the legacy root-level
+	// cursor shape supported for compatibility with existing callers.
+	cursor := page[cursorResponseName]
+	if metadata, ok := page["cursor_page_metadata"].(map[string]any); ok {
+		cursor = metadata[cursorResponseName]
 	}
+	next, _ := cursor.(string)
 	return items, next
 }

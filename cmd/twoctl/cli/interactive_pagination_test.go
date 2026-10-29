@@ -60,7 +60,7 @@ func TestInteractivePaginationAnswers(t *testing.T) {
 				if pages == 2 {
 					next = ""
 				}
-				fmt.Fprintf(w, `{"items":[{"id":9007199254740993,"page":%d}],"next_page_cursor":%q}`, pages, next)
+				fmt.Fprintf(w, `{"items":[{"id":9007199254740993,"page":%d}],"cursor_page_metadata":{"next_page_cursor":%q}}`, pages, next)
 			}))
 			defer srv.Close()
 			flagURL, flagAPIKey = srv.URL, "secret_test_x"
@@ -108,7 +108,7 @@ func TestInteractivePaginationPolicy(t *testing.T) {
 				if pages == 2 {
 					next = ""
 				}
-				fmt.Fprintf(w, `{"items":[{"id":%d}],"next_page_cursor":%q}`, pages, next)
+				fmt.Fprintf(w, `{"items":[{"id":%d}],"cursor_page_metadata":{"next_page_cursor":%q}}`, pages, next)
 			}))
 			defer srv.Close()
 			flagURL, flagAPIKey = srv.URL, "secret_test_x"
@@ -162,7 +162,7 @@ func TestInteractivePaginationLoopAndCursorRestore(t *testing.T) {
 	pages := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pages++
-		fmt.Fprint(w, `{"items":[{"id":1}],"next_page_cursor":"same"}`)
+		fmt.Fprint(w, `{"items":[{"id":1}],"cursor_page_metadata":{"next_page_cursor":"same"}}`)
 	}))
 	defer srv.Close()
 	flagURL, flagAPIKey = srv.URL, "secret_test_x"
@@ -211,4 +211,42 @@ func (r *paginationBlockedReader) Read([]byte) (int, error) {
 	close(r.entered)
 	<-r.release
 	return 0, io.EOF
+}
+
+func TestBillingStatementSchemaPagination(t *testing.T) {
+	for _, all := range []bool{false, true} {
+		t.Run(fmt.Sprintf("all=%v", all), func(t *testing.T) {
+			interactiveTestCommand(t, "")
+			t.Setenv("TWOCTL_SKIP_UPGRADE_CHECK", "1")
+			Root().SetIn(strings.NewReader("\n"))
+			t.Cleanup(func() { Root().SetIn(nil) })
+			pages := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				pages++
+				next := "second"
+				if pages == 2 {
+					next = ""
+					if r.URL.Query().Get(cursorParamName) != "second" {
+						t.Errorf("cursor: %s", r.URL.RawQuery)
+					}
+				}
+				fmt.Fprintf(w, `{"statements":[{"statement_id":%d}],"cursor_page_metadata":{"next_page_cursor":%q,"limit":1}}`, pages, next)
+			}))
+			defer srv.Close()
+			args := []string{"--url", srv.URL, "--api-key", "secret_test_x", "-o", "table", "billing-statement", "get"}
+			if all {
+				args = append(args, "--all")
+			}
+			out, stderr, err := runRoot(t, args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pages != 2 || !strings.Contains(out, "2") {
+				t.Fatalf("pages=%d stdout=%q", pages, out)
+			}
+			if strings.Contains(stderr, "next page?") == all {
+				t.Fatalf("all=%v stderr=%q", all, stderr)
+			}
+		})
+	}
 }
