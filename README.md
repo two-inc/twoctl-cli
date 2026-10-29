@@ -261,6 +261,14 @@ To regenerate locally:
 go build ./...
 ```
 
+CI runs `make check-generated` on every pull request and main-branch push.
+It regenerates the embedded specs from the committed `openapi/` inputs and
+fails if any embedded file changes or is newly generated but untracked.
+When changing source specs or the preprocessor, run `make regen` and commit
+the updated `cmd/twoctl/cli/specs/` files with the change. This check uses
+vendored inputs and does not fetch upstream specs or require API credentials;
+the nightly `regenerate` workflow continues to handle upstream refreshes.
+
 ## Contributing
 
 This repository is generated from the OpenAPI specs in [`two-inc/docs`](https://github.com/two-inc/docs).
