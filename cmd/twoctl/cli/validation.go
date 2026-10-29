@@ -17,6 +17,9 @@ import (
 // all commands and must retain their original describe output.
 func validatePayload(w io.Writer, op *openapi3.Operation, raw []byte) error {
 	if len(raw) == 0 {
+		if op.RequestBody != nil && op.RequestBody.Value != nil && op.RequestBody.Value.Required {
+			return payloadError("request body is required")
+		}
 		return nil
 	}
 	var value any

@@ -119,7 +119,7 @@ func TestPayloadValidationBeforeHTTP(t *testing.T) {
 				flagURL, flagAPIKey = srv.URL, "secret_test_mock"
 				cmd := buildOperationCommand("test", "/test", "POST", payloadTestOperation(t, payloadTestSchema))
 				args := payloadSourceArgs(t, source, body)
-				cmd.SilenceUsage, cmd.SilenceErrors = true
+				cmd.SilenceUsage, cmd.SilenceErrors = true, true
 				var stdout, stderr bytes.Buffer
 				cmd.SetOut(&stdout)
 				cmd.SetErr(&stderr)
@@ -195,4 +195,24 @@ func payloadSourceArgs(t *testing.T, source, body string) []string {
 		f.Close()
 	})
 	return []string{"--file", "-"}
+}
+
+func TestRequiredEmptyPayload(t *testing.T) {
+	op := payloadTestOperation(t, payloadTestSchema)
+	op.RequestBody.Value.Required = true
+	if err := validatePayload(io.Discard, op, nil); err == nil {
+		t.Fatal("required empty body accepted")
+	}
+}
+
+func TestPayloadDryRunValidation(t *testing.T) {
+	resetGlobals(t)
+	cmd := buildOperationCommand("test", "/test", "POST", payloadTestOperation(t, payloadTestSchema))
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--dry-run", "--data", `{"amount":1}`})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("invalid dry-run body accepted")
+	}
 }
