@@ -193,3 +193,18 @@ func TestDiagnosticBodyLimitsAndUnavailableReplay(t *testing.T) {
 		t.Fatalf("nested body secrets leaked: %s", redacted)
 	}
 }
+
+func TestDiagnosticsRedactKeyShapedValuesUnderOrdinaryNames(t *testing.T) {
+	const key = "secret_test_abcdefghijklmnop"
+	req, _ := http.NewRequest(http.MethodGet, "https://example.test?note="+key, nil)
+	req.Header.Set("X-Custom", key)
+	if strings.Contains(diagnosticURL(req), key) {
+		t.Fatal("API-key-shaped query value leaked")
+	}
+	if diagnosticHeaders(req.Header)["X-Custom"] != "[REDACTED]" {
+		t.Fatal("API-key-shaped header value leaked")
+	}
+	if req.URL.Query().Get("note") != key || req.Header.Get("X-Custom") != key {
+		t.Fatal("redaction modified the actual request")
+	}
+}

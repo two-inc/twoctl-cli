@@ -33,7 +33,8 @@ func beginRequestDiagnostics(cmd *cobra.Command, req *http.Request) func(*http.R
 			}
 		}
 		if err != nil {
-			record["error"] = strings.ReplaceAll(err.Error(), req.URL.String(), url)
+			message := strings.ReplaceAll(err.Error(), req.URL.String(), url)
+			record["error"] = secretValueRe.ReplaceAllString(message, "[REDACTED]")
 		}
 		if level >= 2 {
 			addDiagnosticDetails(record, req, resp, body)
@@ -55,9 +56,13 @@ func addDiagnosticDetails(record map[string]any, req *http.Request, resp *http.R
 func diagnosticURL(req *http.Request) string {
 	url := *req.URL
 	query := url.Query()
-	for key := range query {
+	for key, values := range query {
 		if sensitiveHeaderRe.MatchString(key) {
 			query.Set(key, "[REDACTED]")
+			continue
+		}
+		for i, value := range values {
+			values[i] = secretValueRe.ReplaceAllString(value, "[REDACTED]")
 		}
 	}
 	url.RawQuery = query.Encode()
@@ -69,6 +74,8 @@ func diagnosticHeaders(headers http.Header) map[string]string {
 	for key := range out {
 		if sensitiveHeaderRe.MatchString(key) {
 			out[key] = "[REDACTED]"
+		} else {
+			out[key] = secretValueRe.ReplaceAllString(out[key], "[REDACTED]")
 		}
 	}
 	return out
