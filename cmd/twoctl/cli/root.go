@@ -54,6 +54,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagURL, "url", "", "raw API base URL (overrides the context's URL)")
 	rootCmd.PersistentFlags().StringVarP(&flagOutput, "output", "o", "auto", "output format: table, json, yaml (auto = table on TTY, json when piped)")
 	rootCmd.Version = httpx.Version
+	rootCmd.SetVersionTemplate(versionText("{{.Version}}"))
 }
 
 // Root returns the configured root cobra.Command.
