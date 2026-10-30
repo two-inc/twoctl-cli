@@ -194,6 +194,17 @@ Top-level non-resource commands:
 - `-o table|json|yaml` (default `auto`: table on TTY, JSON when piped).
 - Errors are emitted as JSON on stderr with shape `{error, message, status, response, request_id}`. Stdout stays clean for piping.
 
+### Request validation
+
+JSON payloads supplied with `--data`, `--file`, or `--file -` are checked
+against the embedded OpenAPI request schema before the API call (including
+`--all` and `--dry-run`). Invalid JSON, missing required fields, wrong types,
+and enum/constraint mismatches return usage exit code 2 without sending.
+Unknown fields in structured objects produce warnings on stderr but are
+sent unchanged to tolerate schema drift. Explicitly open and typed maps
+retain their schema semantics. Payload values are not printed in validation
+errors or warnings. Use `--describe` to inspect the expected schema.
+
 ### Exit codes
 
 | Code | Meaning |

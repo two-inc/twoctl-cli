@@ -77,6 +77,10 @@ func runPaginated(c *cobra.Command, method, path string, op *openapi3.Operation,
 		}
 	}
 
+	if err := validatePayload(c.ErrOrStderr(), op, bodyBytes); err != nil {
+		return err
+	}
+
 	combined, err = fetchAllPages(c, client, resolved.BaseURL, method, path, op, b, bodyBytes, cursorPtr)
 	if err != nil {
 		return err
