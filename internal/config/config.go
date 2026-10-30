@@ -15,6 +15,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -126,7 +127,11 @@ func resolveKey(flagKey, ctxName string) (string, string, error) {
 		return v, "$" + envVar, nil
 	}
 	if ctxName != "" {
-		if k, err := keyring.Get(keyringService, keyringAccount(ctxName)); err == nil && k != "" {
+		k, err := keyring.Get(keyringService, keyringAccount(ctxName))
+		if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			return "", "", fmt.Errorf("reading keychain for context %q: %w", ctxName, wrapKeyringErr(err))
+		}
+		if err == nil && k != "" {
 			return k, fmt.Sprintf("keychain (context %s)", ctxName), nil
 		}
 	}
@@ -396,11 +401,19 @@ func wrapKeyringErr(err error) error {
 	msg := err.Error()
 	if strings.Contains(msg, "secret-service") ||
 		strings.Contains(msg, "org.freedesktop.secrets") ||
-		strings.Contains(msg, "DBUS_SESSION_BUS_ADDRESS") {
+		strings.Contains(msg, "DBUS_SESSION_BUS_ADDRESS") ||
+		strings.Contains(msg, "dbus-launch") || isKeyringDialError(err) {
 		return fmt.Errorf("no OS keychain backend available - twoctl needs libsecret + a running secret-service (gnome-keyring or KeePassXC). "+
 			"On headless servers, set TWO_API_KEY in the environment instead. (cause: %w)", err)
 	}
 	return err
+}
+
+// isKeyringDialError recognizes the socket errors returned directly by godbus.
+// Inspect the error chain so wrapped dial failures retain the same guidance.
+func isKeyringDialError(err error) bool {
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && opErr.Op == "dial"
 }
 
 // DeleteKey removes the keychain entry for the given context. A missing
@@ -410,7 +423,7 @@ func DeleteKey(ctxName string) error {
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}
-	return err
+	return wrapKeyringErr(err)
 }
 
 // HasStoredKey reports whether the keychain currently holds a key for the
