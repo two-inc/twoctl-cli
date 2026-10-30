@@ -194,6 +194,20 @@ Top-level non-resource commands:
 - `-o table|json|yaml` (default `auto`: table on TTY, JSON when piped).
 - Errors are emitted as JSON on stderr with shape `{error, message, status, response, request_id}`. Stdout stays clean for piping.
 
+### Pagination
+
+Operations with a `page_cursor` parameter support `--all` to collect every
+page and `--no-paginate` to explicitly fetch one page. Without either flag,
+table output on an interactive terminal renders one complete page, then asks
+`next page? [Y/n]` on stderr when a next cursor is present. Enter or `y`
+loads the next page; `n`, other answers, or end-of-input stops.
+
+Prompts require terminal stdin, stdout and stderr. JSON/YAML output, pipes,
+redirected streams and `--file -` never prompt, preserving single-page
+machine-readable responses and request-body stdin. `--all` still works in
+those modes and emits one combined result. `--all` and `--no-paginate`
+cannot be combined. Dry runs do not fetch or prompt.
+
 ### Exit codes
 
 | Code | Meaning |
