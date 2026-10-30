@@ -183,3 +183,12 @@ func TestContextCancellationStopsRetry(t *testing.T) {
 		t.Error("expected context cancellation error")
 	}
 }
+
+func TestDisableRetriesOverridesDefaultAndExplicitCount(t *testing.T) {
+	for _, retries := range []int{0, 3} {
+		client := NewWithOptions(Options{DisableRetries: true, MaxRetries: retries})
+		if got := client.Transport.(*transport).maxRetries; got != 0 {
+			t.Errorf("DisableRetries with MaxRetries=%d: got %d retries", retries, got)
+		}
+	}
+}

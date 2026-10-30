@@ -220,6 +220,22 @@ Top-level non-resource commands:
 | 6 | server error (5xx) |
 | 7 | network / transport failure |
 
+## Retries
+
+API requests retry transient network errors, HTTP 429, and HTTP 5xx up to
+three times by default (four attempts including the initial request).
+Use `--max-retries N` to set the number of retries per request, or
+`--max-retries 0` to make a single attempt:
+
+```sh
+twoctl order get --order-id abc-123 --max-retries 0
+twoctl billing-statement get --all --max-retries 1
+```
+
+The setting applies to each page when using `--all`. Retries keep the same
+idempotency key and request body. The existing 60-second request timeout
+still bounds the attempts and backoff for each request.
+
 ## Self-upgrade
 
 `twoctl` checks for new releases at most once every 24 hours and prompts when one is available. The prompt offers:

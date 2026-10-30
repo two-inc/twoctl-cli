@@ -12,11 +12,12 @@ import (
 
 // Global flags. Populated by cobra during Execute().
 var (
-	flagAPIKey  string
-	flagEnv     string
-	flagContext string
-	flagURL     string
-	flagOutput  string
+	flagAPIKey     string
+	flagEnv        string
+	flagContext    string
+	flagURL        string
+	flagOutput     string
+	flagMaxRetries int
 )
 
 // activeEnv returns the context-selecting flag value, preferring --context
@@ -59,6 +60,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagContext, "context", "", "alias of --env (kubectl-style)")
 	rootCmd.PersistentFlags().StringVar(&flagURL, "url", "", "raw API base URL (overrides the context's URL)")
 	rootCmd.PersistentFlags().StringVarP(&flagOutput, "output", "o", "auto", "output format: table, json, yaml (auto = table on TTY, json when piped)")
+	rootCmd.PersistentFlags().IntVar(&flagMaxRetries, "max-retries", httpx.DefaultMaxRetries, "maximum retries per API request (0 disables retries)")
 	rootCmd.Version = httpx.Version
 }
 

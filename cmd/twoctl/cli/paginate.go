@@ -19,7 +19,6 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/spf13/cobra"
 
-	"github.com/two-inc/twoctl-cli/internal/httpx"
 	"github.com/two-inc/twoctl-cli/internal/output"
 )
 
@@ -56,7 +55,10 @@ func runPaginated(c *cobra.Command, method, path string, op *openapi3.Operation,
 	if err != nil {
 		return err
 	}
-	client := httpx.New(resolved.APIKey)
+	client, err := operationClient(resolved.APIKey)
+	if err != nil {
+		return err
+	}
 
 	var combined []any
 	cursorPtr := b.stringFlags[cursorFlagName]
