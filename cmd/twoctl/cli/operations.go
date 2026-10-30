@@ -366,7 +366,13 @@ func runOperation(c *cobra.Command, method, path string, op *openapi3.Operation,
 }
 
 func resolveForRun(dryRun bool) (*config.Resolved, error) {
-	resolved, err := config.Resolve(flagAPIKey, activeEnv(), flagURL)
+	key := flagAPIKey
+	if dryRun {
+		// Resolve the real context URL without reading a keychain entry.
+		// Dry-run output never uses this placeholder as an auth header.
+		key = "dry-run"
+	}
+	resolved, err := config.Resolve(key, activeEnv(), flagURL)
 	if err == nil {
 		return resolved, nil
 	}

@@ -3,6 +3,8 @@
 package cli
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/two-inc/twoctl-cli/internal/httpx"
@@ -18,12 +20,16 @@ var (
 )
 
 // activeEnv returns the context-selecting flag value, preferring --context
-// over --env when both are set (kubectl-style precedence).
+// over --env when both are set (kubectl-style precedence), then falling
+// back to TWOCTL_CONTEXT for scripts without changing the saved context.
 func activeEnv() string {
 	if flagContext != "" {
 		return flagContext
 	}
-	return flagEnv
+	if flagEnv != "" {
+		return flagEnv
+	}
+	return os.Getenv("TWOCTL_CONTEXT")
 }
 
 var rootCmd = &cobra.Command{

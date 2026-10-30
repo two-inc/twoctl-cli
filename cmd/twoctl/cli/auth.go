@@ -20,7 +20,7 @@ func init() {
 		Long: `Store, remove, and inspect the API key for a context.
 
 By default, auth subcommands operate on the current context (set by
-` + "`twoctl config use-context`" + `). Pass --context to target a different one.`,
+` + "`twoctl config use-context`" + `). Pass --context or set TWOCTL_CONTEXT to target a different one.`,
 	}
 	authCmd.AddCommand(
 		authLoginCmd(),
@@ -101,8 +101,12 @@ func authWhoamiCmd() *cobra.Command {
 }
 
 // pickContext returns the explicit override if provided, otherwise the
-// current context name from config. Errors if neither is set.
+// invocation context (--context / --env / TWOCTL_CONTEXT), then the saved
+// context name. Errors if none is set.
 func pickContext(override string) (string, error) {
+	if override == "" {
+		override = activeEnv()
+	}
 	if override != "" {
 		return override, nil
 	}
