@@ -207,6 +207,13 @@ Top-level non-resource commands:
 | 6 | server error (5xx) |
 | 7 | network / transport failure |
 
+## Version information
+
+`twoctl version` and `twoctl --version` print the same version, Go runtime,
+and platform information. `twoctl version --json` emits a JSON object with
+`version`, `go_version`, `os`, and `arch` fields for scripts. Version queries
+do not read credentials, check for upgrades, or make network requests.
+
 ## Self-upgrade
 
 `twoctl` checks for new releases at most once every 24 hours and prompts when one is available. The prompt offers:
