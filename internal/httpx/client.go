@@ -35,6 +35,9 @@ type Options struct {
 	APIKey     string
 	Timeout    time.Duration
 	MaxRetries int
+	// DisableRetries takes precedence over MaxRetries, whose zero value
+	// otherwise selects DefaultMaxRetries.
+	DisableRetries bool
 }
 
 // New returns an *http.Client wired with auth + identity headers, idempotency
@@ -49,7 +52,9 @@ func NewWithOptions(opt Options) *http.Client {
 	if opt.Timeout == 0 {
 		opt.Timeout = DefaultTimeout
 	}
-	if opt.MaxRetries == 0 {
+	if opt.DisableRetries {
+		opt.MaxRetries = 0
+	} else if opt.MaxRetries == 0 {
 		opt.MaxRetries = DefaultMaxRetries
 	}
 	return &http.Client{

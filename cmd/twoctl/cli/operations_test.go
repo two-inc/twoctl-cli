@@ -35,11 +35,13 @@ func resetGlobals(t *testing.T) {
 	flagURL = ""
 	flagOutput = "json"
 	flagVerbose = 0
+	flagMaxRetries = 3
 	resetCobraFlags(Root())
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("HOME", dir)
 	t.Setenv("TWO_API_KEY", "")
+	t.Setenv("TWOCTL_CONTEXT", "")
 	keyring.MockInit()
 }
 
