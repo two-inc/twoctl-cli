@@ -3,6 +3,8 @@
 package cli
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/two-inc/twoctl-cli/internal/httpx"
@@ -10,20 +12,25 @@ import (
 
 // Global flags. Populated by cobra during Execute().
 var (
-	flagAPIKey  string
-	flagEnv     string
-	flagContext string
-	flagURL     string
-	flagOutput  string
+	flagAPIKey     string
+	flagEnv        string
+	flagContext    string
+	flagURL        string
+	flagOutput     string
+	flagMaxRetries int
 )
 
 // activeEnv returns the context-selecting flag value, preferring --context
-// over --env when both are set (kubectl-style precedence).
+// over --env when both are set (kubectl-style precedence), then falling
+// back to TWOCTL_CONTEXT for scripts without changing the saved context.
 func activeEnv() string {
 	if flagContext != "" {
 		return flagContext
 	}
-	return flagEnv
+	if flagEnv != "" {
+		return flagEnv
+	}
+	return os.Getenv("TWOCTL_CONTEXT")
 }
 
 var rootCmd = &cobra.Command{
@@ -53,6 +60,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagContext, "context", "", "alias of --env (kubectl-style)")
 	rootCmd.PersistentFlags().StringVar(&flagURL, "url", "", "raw API base URL (overrides the context's URL)")
 	rootCmd.PersistentFlags().StringVarP(&flagOutput, "output", "o", "auto", "output format: table, json, yaml (auto = table on TTY, json when piped)")
+	rootCmd.PersistentFlags().IntVar(&flagMaxRetries, "max-retries", httpx.DefaultMaxRetries, "maximum retries per API request (0 disables retries)")
 	rootCmd.Version = httpx.Version
 }
 
