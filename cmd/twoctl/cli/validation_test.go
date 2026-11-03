@@ -41,6 +41,14 @@ func TestPayloadValidation(t *testing.T) {
 		{"malformed", `{"secret":`, "", true},
 		{"multiple values", `{} {}`, "", true},
 		{"null", `null`, "", true},
+		{"exact decimal still validated", `{"amount":0.5,"currency":"GBP"}`, "", true},
+		{"large exact integer", `{"amount":9007199254740992,"currency":"GBP"}`, "", false},
+		{"fraction lost in float64", `{"amount":1.0000000000000001,"currency":"secret"}`, `"/amount" cannot be checked exactly`, false},
+		{"integer beyond float64", `{"amount":9007199254740993,"currency":"GBP"}`, `"/amount" cannot be checked exactly`, false},
+		{"out of float64 range", `{"amount":1e400,"currency":"GBP"}`, `"/amount" cannot be checked exactly`, false},
+		{"underflow", `{"amount":1e-400,"currency":"GBP"}`, `"/amount" cannot be checked exactly`, false},
+		{"nested inexact", `{"amount":1,"currency":"GBP","lines":[{"name":"x","qty":1e400}]}`, `"/lines/0/qty" cannot be checked exactly`, false},
+		{"zero", `{"amount":-0.0e10,"currency":"GBP"}`, "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var warnings bytes.Buffer
