@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -22,8 +24,10 @@ func validatePayload(w io.Writer, op *openapi3.Operation, raw []byte) error {
 		}
 		return nil
 	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
 	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
+	if err := dec.Decode(&value); err != nil || dec.Decode(&struct{}{}) != io.EOF {
 		return payloadError("request body must contain one valid JSON value")
 	}
 	if op.RequestBody == nil || op.RequestBody.Value == nil {
@@ -34,6 +38,13 @@ func validatePayload(w io.Writer, op *openapi3.Operation, raw []byte) error {
 		return nil
 	}
 	schema := mt.Schema.Value
+	value, inexact := floatPayload(value, "")
+	if inexact != "" {
+		// The validator compares numbers as float64, so it could pass or reject
+		// this one wrongly; let the API decide.
+		fmt.Fprintf(w, "warning: number at %q cannot be checked exactly; skipping local schema validation (the API will validate it)\n", inexact)
+		return nil
+	}
 	if err := schema.VisitJSON(pruneUnknownPayload(schema, value), openapi3.VisitAsRequest()); err != nil {
 		// Do not render SchemaError.Error(): it includes the submitted payload.
 		var schemaErr *openapi3.SchemaError
@@ -54,6 +65,69 @@ func validatePayload(w io.Writer, op *openapi3.Operation, raw []byte) error {
 		fmt.Fprintf(w, "warning: unknown request property at %q; sending unchanged (the API schema may have drifted)\n", path)
 	}
 	return nil
+}
+
+// floatPayload converts JSON numbers to float64 and returns the path of the
+// first number that float64 cannot represent exactly.
+func floatPayload(value any, path string) (any, string) {
+	switch v := value.(type) {
+	case json.Number:
+		f, exact := exactFloat(v.String())
+		if !exact {
+			return value, pointerOrRoot(path)
+		}
+		return f, ""
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			item, inexact := floatPayload(v[key], path+"/"+strings.ReplaceAll(strings.ReplaceAll(key, "~", "~0"), "/", "~1"))
+			if inexact != "" {
+				return value, inexact
+			}
+			out[key] = item
+		}
+		return out, ""
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			converted, inexact := floatPayload(item, fmt.Sprintf("%s/%d", path, i))
+			if inexact != "" {
+				return value, inexact
+			}
+			out[i] = converted
+		}
+		return out, ""
+	default:
+		return value, ""
+	}
+}
+
+// exactFloat reports whether the shortest float64 rendering of literal has the
+// same value, so 0.1 is exact but 36.000000000000001 and 1e400 are not.
+func exactFloat(literal string) (float64, bool) {
+	f, err := strconv.ParseFloat(literal, 64)
+	if err != nil {
+		return 0, false
+	}
+	if f == 0 {
+		mantissa := strings.TrimLeft(strings.SplitN(strings.ToLower(literal), "e", 2)[0], "-")
+		return f, strings.Trim(mantissa, "0.") == ""
+	}
+	want, ok := new(big.Rat).SetString(literal)
+	got, ok2 := new(big.Rat).SetString(strconv.FormatFloat(f, 'g', -1, 64))
+	return f, ok && ok2 && want.Cmp(got) == 0
+}
+
+func pointerOrRoot(path string) string {
+	if path == "" {
+		return "/"
+	}
+	return path
 }
 
 func payloadError(message string) error {
