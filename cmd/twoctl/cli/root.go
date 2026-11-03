@@ -64,6 +64,7 @@ func init() {
 	rootCmd.PersistentFlags().CountVarP(&flagVerbose, "verbose", "v", "HTTP diagnostics on stderr (-v timings and IDs; -vv redacted headers and bodies)")
 	rootCmd.PersistentFlags().IntVar(&flagMaxRetries, "max-retries", httpx.DefaultMaxRetries, "maximum retries per API request (0 disables retries)")
 	rootCmd.Version = httpx.Version
+	rootCmd.SetVersionTemplate(versionText("{{.Version}}"))
 }
 
 // Root returns the configured root cobra.Command.

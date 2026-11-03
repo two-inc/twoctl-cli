@@ -1,29 +1,17 @@
 package cli
 
-// kubectl-flavored top-level helpers: `version`, `explain`, `api-resources`.
+// kubectl-flavored top-level helpers: `explain`, `api-resources`.
 
 import (
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"sort"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/spf13/cobra"
-
-	"github.com/two-inc/twoctl-cli/internal/httpx"
 )
 
 func init() {
-	register(&cobra.Command{
-		Use:   "version",
-		Short: "Print twoctl version, commit, and Go runtime",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintf(cmd.OutOrStdout(), "twoctl version %s\ngo %s\nplatform %s/%s\n",
-				httpx.Version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
-			return nil
-		},
-	})
 
 	register(&cobra.Command{
 		Use:   "explain <resource> <action>",
