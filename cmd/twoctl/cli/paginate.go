@@ -79,6 +79,10 @@ func runPaginated(c *cobra.Command, method, path string, op *openapi3.Operation,
 		}
 	}
 
+	if err := validatePayload(c.ErrOrStderr(), op, bodyBytes); err != nil {
+		return err
+	}
+
 	if shouldPromptPagination(c, b) && !flagBool(c, "all", "twoctl-all") {
 		return runInteractivePages(c, client, resolved.BaseURL, method, path, op, b, bodyBytes, cursorPtr)
 	}
