@@ -36,7 +36,13 @@ func checkDiagnosticVerbosity(t *testing.T, level int) {
 		fmt.Fprint(w, `{"token":"response-private","payment_link":"https://checkout.two.inc/payment/initiation?token=abc123","id":9007199254740993}`)
 	}))
 	defer srv.Close()
-	args := []string{"--url", srv.URL, "--api-key", "api-private", "order", "create", "--data", payload}
+	// Payload validation runs before the request, so the probe declares the
+	// fields this payload sends instead of relying on the real order schema.
+	probe := buildOperationCommand("diagnostics-probe", "/test", "POST", payloadTestOperation(t,
+		`{"type":"object","properties":{"password":{"type":"string"},"note":{"type":"string"},"amount":{"type":"integer"}}}`))
+	Root().AddCommand(probe)
+	t.Cleanup(func() { Root().RemoveCommand(probe) })
+	args := []string{"--url", srv.URL, "--api-key", "api-private", "diagnostics-probe", "--data", payload}
 	if level > 0 {
 		args = append(args, "-"+strings.Repeat("v", level))
 	}
