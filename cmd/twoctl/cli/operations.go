@@ -349,7 +349,7 @@ func runOperation(c *cobra.Command, method, path string, op *openapi3.Operation,
 	if err != nil {
 		return err
 	}
-	body, err := readRequestBody(b, headers)
+	body, err := readValidatedRequestBody(c.ErrOrStderr(), op, b, headers)
 	if err != nil {
 		return err
 	}
