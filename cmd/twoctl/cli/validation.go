@@ -24,20 +24,14 @@ func validatePayload(w io.Writer, op *openapi3.Operation, raw []byte) error {
 		}
 		return nil
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	var value any
-	if err := dec.Decode(&value); err != nil || dec.Decode(&struct{}{}) != io.EOF {
-		return payloadError("request body must contain one valid JSON value")
+	value, err := decodePayload(raw)
+	if err != nil {
+		return err
 	}
-	if op.RequestBody == nil || op.RequestBody.Value == nil {
+	schema := payloadSchema(op)
+	if schema == nil {
 		return nil
 	}
-	mt := op.RequestBody.Value.Content.Get("application/json")
-	if mt == nil || mt.Schema == nil || mt.Schema.Value == nil {
-		return nil
-	}
-	schema := mt.Schema.Value
 	value, inexact := floatPayload(value, "")
 	if inexact != "" {
 		// The validator compares numbers as float64, so it could pass or reject
@@ -65,6 +59,28 @@ func validatePayload(w io.Writer, op *openapi3.Operation, raw []byte) error {
 		fmt.Fprintf(w, "warning: unknown request property at %q; sending unchanged (the API schema may have drifted)\n", path)
 	}
 	return nil
+}
+
+// decodePayload keeps numbers as json.Number so precision loss can be detected.
+func decodePayload(raw []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var value any
+	if err := dec.Decode(&value); err != nil || dec.Decode(&struct{}{}) != io.EOF {
+		return nil, payloadError("request body must contain one valid JSON value")
+	}
+	return value, nil
+}
+
+func payloadSchema(op *openapi3.Operation) *openapi3.Schema {
+	if op.RequestBody == nil || op.RequestBody.Value == nil {
+		return nil
+	}
+	mt := op.RequestBody.Value.Content.Get("application/json")
+	if mt == nil || mt.Schema == nil {
+		return nil
+	}
+	return mt.Schema.Value
 }
 
 // floatPayload converts JSON numbers to float64 and returns the path of the
