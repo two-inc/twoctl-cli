@@ -34,6 +34,7 @@ func resetGlobals(t *testing.T) {
 	flagContext = ""
 	flagURL = ""
 	flagOutput = "json"
+	flagVerbose = 0
 	flagMaxRetries = 3
 	resetCobraFlags(Root())
 	dir := t.TempDir()
