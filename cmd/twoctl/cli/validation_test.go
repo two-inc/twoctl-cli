@@ -271,3 +271,29 @@ func TestPayloadTypedMapNestedUnknown(t *testing.T) {
 		t.Fatal("missing typed-map child warning")
 	}
 }
+
+func TestPayloadValidationInteractivePagination(t *testing.T) {
+	resetGlobals(t)
+	old := paginationTerminal
+	paginationTerminal = func(any) bool { return true }
+	t.Cleanup(func() { paginationTerminal = old })
+	flagOutput = "table"
+	op := payloadTestOperation(t, payloadTestSchema)
+	op.Parameters = openapi3.Parameters{{Value: &openapi3.Parameter{Name: "page_cursor", In: "query", Schema: &openapi3.SchemaRef{Value: openapi3.NewStringSchema()}}}}
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(`{"items":[{"id":1}]}`))
+	}))
+	defer srv.Close()
+	flagURL, flagAPIKey = srv.URL, "secret_test_mock"
+	cmd := buildOperationCommand("test", "/test", "POST", op)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetIn(strings.NewReader("y\n"))
+	cmd.SetArgs([]string{"--data", `{"amount":1}`})
+	if err := cmd.Execute(); err == nil || calls != 0 {
+		t.Fatalf("invalid interactive paginated body sent: calls=%d err=%v", calls, err)
+	}
+}
