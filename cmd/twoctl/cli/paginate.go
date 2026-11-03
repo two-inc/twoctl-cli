@@ -19,7 +19,6 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/spf13/cobra"
 
-	"github.com/two-inc/twoctl-cli/internal/httpx"
 	"github.com/two-inc/twoctl-cli/internal/output"
 )
 
@@ -56,7 +55,10 @@ func runPaginated(c *cobra.Command, method, path string, op *openapi3.Operation,
 	if err != nil {
 		return err
 	}
-	client := httpx.New(resolved.APIKey)
+	client, err := operationClient(resolved.APIKey)
+	if err != nil {
+		return err
+	}
 
 	var combined []any
 	cursorPtr := b.stringFlags[cursorFlagName]
@@ -75,6 +77,10 @@ func runPaginated(c *cobra.Command, method, path string, op *openapi3.Operation,
 		if err != nil {
 			return err
 		}
+	}
+
+	if err := validatePayload(c.ErrOrStderr(), op, bodyBytes); err != nil {
+		return err
 	}
 
 	combined, err = fetchAllPages(c, client, resolved.BaseURL, method, path, op, b, bodyBytes, cursorPtr)
@@ -112,7 +118,7 @@ func fetchAllPages(c *cobra.Command, client *http.Client, baseURL, method, path 
 		if err != nil {
 			return nil, err
 		}
-		raw, err := fetchPage(client, req)
+		raw, err := fetchPage(c, client, req)
 		if err != nil {
 			return nil, err
 		}
@@ -151,13 +157,16 @@ func buildPageRequest(c *cobra.Command, baseURL, method, path string, op *openap
 	return req, nil
 }
 
-func fetchPage(client *http.Client, req *http.Request) ([]byte, error) {
+func fetchPage(c *cobra.Command, client *http.Client, req *http.Request) ([]byte, error) {
+	trace := beginRequestDiagnostics(c, req)
 	resp, err := client.Do(req)
 	if err != nil {
+		trace(nil, nil, err)
 		return nil, &apiError{code: "network", message: err.Error(), exit: ExitNetwork}
 	}
 	defer resp.Body.Close()
 	body, err := readCappedBody(resp.Body)
+	trace(resp, body, err)
 	if err != nil {
 		return nil, err
 	}

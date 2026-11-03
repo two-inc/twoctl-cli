@@ -349,7 +349,7 @@ func runOperation(c *cobra.Command, method, path string, op *openapi3.Operation,
 	if err != nil {
 		return err
 	}
-	body, err := readRequestBody(b, headers)
+	body, err := readValidatedRequestBody(c.ErrOrStderr(), op, b, headers)
 	if err != nil {
 		return err
 	}
@@ -362,11 +362,35 @@ func runOperation(c *cobra.Command, method, path string, op *openapi3.Operation,
 	if dryRun {
 		return printDryRun(c, req, body != nil)
 	}
-	return executeRequest(c, httpx.New(resolved.APIKey), req)
+	client, err := operationClient(resolved.APIKey)
+	if err != nil {
+		return err
+	}
+	return executeRequest(c, client, req)
+}
+
+// operationClient applies the same retry policy to ordinary and paginated calls.
+func operationClient(apiKey string) (*http.Client, error) {
+	if flagMaxRetries < 0 {
+		return nil, &apiError{
+			code:    "invalid_max_retries",
+			message: "--max-retries must be zero or greater",
+			exit:    ExitUsage,
+		}
+	}
+	return httpx.NewWithOptions(httpx.Options{
+		APIKey: apiKey, MaxRetries: flagMaxRetries, DisableRetries: flagMaxRetries == 0,
+	}), nil
 }
 
 func resolveForRun(dryRun bool) (*config.Resolved, error) {
-	resolved, err := config.Resolve(flagAPIKey, activeEnv(), flagURL)
+	key := flagAPIKey
+	if dryRun {
+		// Resolve the real context URL without reading a keychain entry.
+		// Dry-run output never uses this placeholder as an auth header.
+		key = "dry-run"
+	}
+	resolved, err := config.Resolve(key, activeEnv(), flagURL)
 	if err == nil {
 		return resolved, nil
 	}
@@ -521,13 +545,16 @@ func readCappedBody(r io.Reader) ([]byte, error) {
 }
 
 func executeRequest(c *cobra.Command, client *http.Client, req *http.Request) error {
+	trace := beginRequestDiagnostics(c, req)
 	resp, err := client.Do(req)
 	if err != nil {
+		trace(nil, nil, err)
 		return &apiError{code: "network", message: err.Error(), exit: ExitNetwork}
 	}
 	defer resp.Body.Close()
 
 	respBody, err := readCappedBody(resp.Body)
+	trace(resp, respBody, err)
 	if err != nil {
 		return err
 	}
@@ -604,7 +631,6 @@ func readBody(file, data string) ([]byte, error) {
 
 func printResponse(cmd *cobra.Command, status int, body []byte) error {
 	if len(body) == 0 {
-		fmt.Fprintf(cmd.ErrOrStderr(), "HTTP %d (no body)\n", status)
 		return nil
 	}
 	format, err := resolveOutputFormat(cmd)

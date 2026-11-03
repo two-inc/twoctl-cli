@@ -110,6 +110,19 @@ twoctl --context cyber checkout get-order --order-id abc   # kubectl-style alias
 twoctl --url http://localhost:8080 --api-key secret_test_x ...
 ```
 
+Scripts can select a context without changing the saved selection:
+
+```sh
+TWOCTL_CONTEXT=staging twoctl order get --order-id abc
+```
+
+Context selection follows `--context`, then `--env`, then non-empty
+`TWOCTL_CONTEXT`, then the saved current context. `--url` overrides the
+API URL and requires `--api-key` or `TWO_API_KEY` rather than using a stored
+context key. API calls, `auth whoami`, `auth login`, `auth logout`, and
+`--dry-run` honor the invocation context. `config current-context` continues
+to show the saved selection; the environment override never writes it.
+
 For built-in env names (`prod`, `sandbox`, `staging`, `cyber`, `perf`,
 `release`) twoctl knows the URL. For any other name it falls back to
 `https://api.<name>.two.inc`; override with `--url`.
@@ -121,6 +134,13 @@ API key resolution order (highest precedence first):
 3. OS keychain entry for the active context
 
 Keys are obtained from the [Two merchant portal](https://portal.two.inc).
+
+If a keychain lookup fails, twoctl reports the underlying error rather than
+claiming no key is stored. On headless Linux without a running Secret
+Service/DBus session, the error explains the required backend and suggests
+`TWO_API_KEY` for headless use. Explicit `--api-key` and `TWO_API_KEY` values
+bypass the keychain. A missing key still prompts you to run `twoctl auth login`;
+keychain failures never fall back to storing keys in a file.
 
 ### Configuration directory
 
@@ -187,6 +207,17 @@ Top-level non-resource commands:
 - `-o table|json|yaml` (default `auto`: table on TTY, JSON when piped).
 - Errors are emitted as JSON on stderr with shape `{error, message, status, response, request_id}`. Stdout stays clean for piping.
 
+### Request validation
+
+JSON payloads supplied with `--data`, `--file`, or `--file -` are checked
+against the embedded OpenAPI request schema before the API call (including
+`--all` and `--dry-run`). Invalid JSON, missing required fields, wrong types,
+and enum/constraint mismatches return usage exit code 2 without sending.
+Unknown fields in structured objects produce warnings on stderr but are
+sent unchanged to tolerate schema drift. Explicitly open and typed maps
+retain their schema semantics. Payload values are not printed in validation
+errors or warnings. Use `--describe` to inspect the expected schema.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -206,6 +237,37 @@ Top-level non-resource commands:
 and platform information. `twoctl version --json` emits a JSON object with
 `version`, `go_version`, `os`, and `arch` fields for scripts. Version queries
 do not read credentials, check for upgrades, or make network requests.
+
+## HTTP diagnostics
+
+Use `-v` (or `--verbose`) to write one JSON diagnostic per API request to
+stderr, including method, URL, HTTP status, elapsed milliseconds, and the
+upstream request ID when present. This includes successful calls and every
+page fetched by `--all`; the duration includes retries and reading the body.
+Transport and body-read failures include an error field.
+
+Use `-vv` to include request/response headers and bodies. Sensitive header,
+query, and JSON field values are redacted. Body diagnostics use the existing
+4 MiB cap; an unavailable or oversized request body is reported without
+interrupting the API request. Treat detailed output as API data when sharing
+it. Stdout remains the operation response, and successful calls produce no
+HTTP diagnostics by default.
+
+## Retries
+
+API requests retry transient network errors, HTTP 429, and HTTP 5xx up to
+three times by default (four attempts including the initial request).
+Use `--max-retries N` to set the number of retries per request, or
+`--max-retries 0` to make a single attempt:
+
+```sh
+twoctl order get --order-id abc-123 --max-retries 0
+twoctl billing-statement get --all --max-retries 1
+```
+
+The setting applies to each page when using `--all`. Retries keep the same
+idempotency key and request body. The existing 60-second request timeout
+still bounds the attempts and backoff for each request.
 
 ## Self-upgrade
 
