@@ -126,7 +126,7 @@ func fetchPages(c *cobra.Command, client *http.Client, baseURL, method, path str
 		if err != nil {
 			return nil, err
 		}
-		raw, err := fetchPage(client, req)
+		raw, err := fetchPage(c, client, req)
 		if err != nil {
 			return nil, err
 		}
@@ -169,13 +169,16 @@ func buildPageRequest(c *cobra.Command, baseURL, method, path string, op *openap
 	return req, nil
 }
 
-func fetchPage(client *http.Client, req *http.Request) ([]byte, error) {
+func fetchPage(c *cobra.Command, client *http.Client, req *http.Request) ([]byte, error) {
+	trace := beginRequestDiagnostics(c, req)
 	resp, err := client.Do(req)
 	if err != nil {
+		trace(nil, nil, err)
 		return nil, &apiError{code: "network", message: err.Error(), exit: ExitNetwork}
 	}
 	defer resp.Body.Close()
 	body, err := readCappedBody(resp.Body)
+	trace(resp, body, err)
 	if err != nil {
 		return nil, err
 	}

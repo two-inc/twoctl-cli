@@ -110,6 +110,7 @@ func TestRunOperationWithRequestBody(t *testing.T) {
 
 func TestRunOperationEmptyResponse(t *testing.T) {
 	resetGlobals(t)
+	t.Setenv("TWOCTL_SKIP_UPGRADE_CHECK", "1")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -120,8 +121,8 @@ func TestRunOperationEmptyResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stderr, "no body") {
-		t.Errorf("expected 'no body' on stderr: %q", stderr)
+	if stderr != "" {
+		t.Errorf("successful no-body response should be quiet: %q", stderr)
 	}
 }
 
